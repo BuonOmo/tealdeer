@@ -18,9 +18,9 @@
 FROM rust AS tealdeer-builder
 
 WORKDIR /build
-RUN git clone https://github.com/tealdeer-rs/tealdeer.git \
+RUN git clone --quiet https://github.com/tealdeer-rs/tealdeer.git \
     && cd tealdeer \
-    && cargo build --release \
+    && cargo build --release --quiet \
     && mkdir /build-outputs \
     && cp target/release/tldr /build-outputs/tealdeer
 
@@ -28,9 +28,9 @@ RUN git clone https://github.com/tealdeer-rs/tealdeer.git \
 
 FROM rust AS tlrc-builder
 WORKDIR /build
-RUN git clone https://github.com/tldr-pages/tlrc.git \
+RUN git clone --quiet https://github.com/tldr-pages/tlrc.git \
     && cd tlrc \
-    && cargo build --release \
+    && cargo build --release --quiet \
     && mkdir /build-outputs \
     && cp target/release/tldr /build-outputs/tlrc
 
@@ -40,8 +40,8 @@ RUN git clone https://github.com/tldr-pages/tlrc.git \
 FROM ubuntu:latest AS tldr-c-builder
 
 WORKDIR /build
-RUN apt-get update && apt-get install -y build-essential git && rm -rf /var/lib/apt/lists/*
-RUN git clone https://github.com/tldr-pages/tldr-c-client.git \
+RUN apt-get update -qq && apt-get install -yqq build-essential git && rm -rf /var/lib/apt/lists/*
+RUN git clone --quiet https://github.com/tldr-pages/tldr-c-client.git \
     && cd tldr-c-client \
     && DEBIAN_FRONTEND=noninteractive ./deps.sh \
     && make \
@@ -55,17 +55,17 @@ FROM haskell AS haskell-builder
 
 WORKDIR /build
 
-RUN git clone https://github.com/psibi/tldr-hs.git \
+RUN (git clone --quiet https://github.com/psibi/tldr-hs.git \
     && cd tldr-hs \
-    && stack build --install-ghc
+    && stack build --install-ghc --no-cabal-verbose \
+    && mkdir -p /build-outputs \
+    && find tldr-hs/.stack-work/dist -type f -iname tldr -exec mv '{}' /build-outputs/tldr-hs \;) || true
 
-RUN git clone https://github.com/gutjuri/fast-tldr \
+RUN (git clone --quiet https://github.com/gutjuri/fast-tldr \
     && cd fast-tldr \
-    && stack build --install-ghc
-
-RUN mkdir /build-outputs \
-    && find tldr-hs/.stack-work/dist -type f -iname tldr -exec mv '{}' /build-outputs/tldr-hs \; \
-    && find fast-tldr/.stack-work/dist -type f -iname tldr -exec mv '{}' /build-outputs/fast-tldr \;
+    && stack build --install-ghc --no-cabal-verbose \
+    && mkdir -p /build-outputs \
+    && find fast-tldr/.stack-work/dist -type f -iname tldr -exec mv '{}' /build-outputs/fast-tldr \;) || true
 
 ################################################################################
 
@@ -82,14 +82,14 @@ RUN npm install tldr \
 FROM euantorano/zig:0.8.0 AS zig-builder
 
 WORKDIR /build
-RUN apk add git \
-    && git clone https://gitlab.com/ve-nt/outfieldr.git \
+RUN (apk add git \
+    && mkdir /build-outputs \
+    && git clone --quiet https://gitlab.com/ve-nt/outfieldr.git \
     && cd outfieldr \
     && git submodule init \
     && git submodule update \
     && zig build -Drelease-safe \
-    && mkdir /build-outputs \
-    && cp bin/tldr /build-outputs/outfieldr
+    && cp bin/tldr /build-outputs/outfieldr) || true
 
 ################################################################################
 
@@ -98,7 +98,7 @@ FROM ubuntu:latest AS benchmark
 ENV LANG="en_US.UTF-8"
 
 WORKDIR /deps
-RUN apt-get update && apt-get install -y wget unzip python3 python3-venv && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -yqq wget unzip python3 python3-venv && rm -rf /var/lib/apt/lists/*
 COPY --from=tldr-c-builder /deps/* ./
 RUN for file in *; do DEBIAN_FRONTEND=noninteractive sh $file; done
 
@@ -107,7 +107,7 @@ COPY --from=tealdeer-builder /build-outputs/* ./
 COPY --from=tlrc-builder /build-outputs/* ./
 COPY --from=tldr-c-builder /build-outputs/* ./
 COPY --from=haskell-builder /build-outputs/* ./
-RUN wget -qO tldr-bash https://4e4.win/tldr && chmod +x tldr-bash
+RUN wget -qO tldr-bash https://raw.githubusercontent.com/raylee/tldr/master/tldr && chmod +x tldr-bash
 COPY --from=node-builder /build-outputs/node /build-outputs/tldr-node ./
 COPY --from=node-builder /build-outputs/node_modules/ ./node_modules/
 COPY --from=zig-builder /build-outputs/* ./
@@ -123,15 +123,15 @@ RUN python3 -m venv tldr-python \
 
 # Update all the individual caches
 RUN bash -c 'mkdir -p /caches/{tealdeer,tlrc,tldr-c,tldr-hs,fast-tldr,tldr-bash,tldr-node,tldr-python,outfieldr/.local/share}' \
-    && TEALDEER_CACHE_DIR=/caches/tealdeer ./tealdeer -u \
-    && TLDR_CACHE_DIR=/caches/tlrc ./tlrc -u \
-    && TLDR_CACHE_DIR=/caches/tldr-c ./tldr-c -u \
-    && XDG_DATA_HOME=/caches/tldr-hs ./tldr-hs -u \
-    && XDG_DATA_HOME=/caches/fast-tldr ./fast-tldr -u \
-    && XDG_DATA_HOME=/caches/tldr-bash ./tldr-bash -u \
-    && HOME=/caches/tldr-node ./tldr-node -u \
-    && HOME=/caches/tldr-python ./tldr-python.bash -u \
-    && HOME=/caches/outfieldr ./outfieldr -u
+    && { [ -e "./tealdeer" ] && TEALDEER_CACHE_DIR=/caches/tealdeer ./tealdeer -u || true } \
+    && { [ -e "./tlrc" ] && TLDR_CACHE_DIR=/caches/tlrc ./tlrc -u || true } \
+    && { [ -e "./tldr-c" ] && TLDR_CACHE_DIR=/caches/tldr-c ./tldr-c -u || true } \
+    && { [ -e "./tldr-hs" ] && XDG_DATA_HOME=/caches/tldr-hs ./tldr-hs -u || true } \
+    && { [ -e "./fast-tldr" ] && XDG_DATA_HOME=/caches/fast-tldr ./fast-tldr -u || true } \
+    && { [ -e "./tldr-bash" ] && XDG_DATA_HOME=/caches/tldr-bash ./tldr-bash -u || true } \
+    && { [ -e "./tldr-node" ] && HOME=/caches/tldr-node ./tldr-node -u || true } \
+    && { [ -e "./tldr-python.bash" ] && HOME=/caches/tldr-python ./tldr-python.bash -u || true } \
+    && { [ -e "./outfieldr" ] && HOME=/caches/outfieldr ./outfieldr -u || true }
 
 WORKDIR /tools
 RUN wget -q https://github.com/sharkdp/hyperfine/releases/download/v1.11.0/hyperfine_1.11.0_amd64.deb && dpkg -i hyperfine_1.11.0_amd64.deb
@@ -142,12 +142,12 @@ CMD hyperfine \
     --warmup 10 \
     --runs 50 \
     --prepare 'sync; echo 3 | tee /proc/sys/vm/drop_caches' \
-    "TEALDEER_CACHE_DIR=/caches/tealdeer ./tealdeer $PAGE" \
-    "TLDR_CACHE_DIR=/caches/tlrc ./tlrc $PAGE" \
-    "TLDR_CACHE_DIR=/caches/tldr-c ./tldr-c $PAGE" \
-    "XDG_DATA_HOME=/caches/tldr-hs ./tldr-hs $PAGE" \
-    "XDG_DATA_HOME=/caches/fast-tldr ./fast-tldr $PAGE" \
-    "XDG_DATA_HOME=/caches/tldr-bash TLDR_LESS=0 ./tldr-bash $PAGE" \
-    "HOME=/caches/tldr-python ./tldr-python.bash $PAGE" \
-    "HOME=/caches/outfieldr ./outfieldr $PAGE" \
-    "HOME=/caches/tldr-node ./tldr-node $PAGE"
+    "[ -e \"./tealdeer\" ] && TEALDEER_CACHE_DIR=/caches/tealdeer ./tealdeer $PAGE" \
+    "[ -e \"./tlrc\" ] && TLDR_CACHE_DIR=/caches/tlrc ./tlrc $PAGE" \
+    "[ -e \"./tldr-c\" ] && TLDR_CACHE_DIR=/caches/tldr-c ./tldr-c $PAGE" \
+    "[ -e \"./tldr-hs\" ] && XDG_DATA_HOME=/caches/tldr-hs ./tldr-hs $PAGE" \
+    "[ -e \"./fast-tldr\" ] && XDG_DATA_HOME=/caches/fast-tldr ./fast-tldr $PAGE" \
+    "[ -e \"./tldr-bash\" ] && XDG_DATA_HOME=/caches/tldr-bash TLDR_LESS=0 ./tldr-bash $PAGE" \
+    "[ -e \"./tldr-python.bash\" ] && HOME=/caches/tldr-python ./tldr-python.bash $PAGE" \
+    "[ -e \"./outfieldr\" ] && HOME=/caches/outfieldr ./outfieldr $PAGE" \
+    "[ -e \"./tldr-node\" ] && HOME=/caches/tldr-node ./tldr-node $PAGE"
