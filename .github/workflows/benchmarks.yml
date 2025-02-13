@@ -1,0 +1,13 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+
+jobs:
+  benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker build . --pull --tag tldr-benchmark --file benchmarks/Dockerfile
+          docker run --privileged --rm -it tldr-benchmark
